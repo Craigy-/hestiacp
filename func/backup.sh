@@ -92,7 +92,7 @@ ftp_backup() {
 	fi
 
 	# Debug info
-	echo -e "$(date "+%F %T") Remote: ftp://$HOST$BPATH/$user.$backup_new_date.tar"
+	echo -e "$(date "+%F %T") Remote: ftp://$HOST$BPATH/$user/$backup_new_date.tar"
 
 	# Checking ftp connection
 	fconn=$(ftpc)
@@ -124,23 +124,29 @@ ftp_backup() {
 		return "$E_FTP"
 	fi
 
+	if [ -z $BPATH ]; then
+		ftpc "mkdir $user" > /dev/null 2>&1
+	else
+		ftpc "cd $BPATH" "mkdir $user" > /dev/null 2>&1
+	fi
+
 	# Checking retention (Only include .tar files)
 	if [ -z $BPATH ]; then
-		backup_list=$(ftpc "ls" | awk '{print $9}' | grep "^$user\." | grep ".tar" | sort)
+		backup_list=$(ftpc "cd $user" "ls" | awk '{print $9}' | grep ".tar" | sort)
 	else
-		backup_list=$(ftpc "cd $BPATH" "ls" | awk '{print $9}' | grep "^$user\." | grep ".tar" | sort)
+		backup_list=$(ftpc "cd $BPATH/$user" "ls" | awk '{print $9}' | grep ".tar" | sort)
 	fi
 	backups_count=$(echo "$backup_list" | wc -l)
 	if [ "$backups_count" -ge "$BACKUPS" ]; then
 		backups_rm_number=$((backups_count - BACKUPS + 1))
 		for backup in $(echo "$backup_list" | head -n $backups_rm_number); do
-			backup_date=$(echo $backup | sed -e "s/$user.//" -e "s/.tar$//")
+			backup_date=$(echo $backup | sed -e "s/.tar$//")
 			echo -e "$(date "+%F %T") Rotated ftp backup: $backup_date" \
 				| tee -a $BACKUP/$user.log
 			if [ -z $BPATH ]; then
-				ftpc "delete $backup"
+				ftpc "cd $user" "delete $backup"
 			else
-				ftpc "cd $BPATH" "delete $backup"
+				ftpc "cd $BPATH/$user" "delete $backup"
 			fi
 		done
 	fi
@@ -155,14 +161,14 @@ ftp_backup() {
 		fi
 	else
 		cd $tmpdir
-		tar -cf $BACKUP/$user.$backup_new_date.tar .
+		tar -cf $BACKUP/$backup_new_date.tar .
 		cd $BACKUP/
 		if [ -z $BPATH ]; then
-			ftpc "put $user.$backup_new_date.tar"
+			ftpc "cd $user" "put $backup_new_date.tar"
 		else
-			ftpc "cd $BPATH" "put $user.$backup_new_date.tar"
+			ftpc "cd $BPATH/$user" "put $backup_new_date.tar"
 		fi
-		rm -f $user.$backup_new_date.tar
+		rm -f $backup_new_date.tar
 	fi
 }
 
@@ -173,23 +179,27 @@ ftp_download() {
 		PORT='21'
 	fi
 	cd $BACKUP
+	foldername=$(echo "$1" | cut -d '.' -f 1)
+	filename=$(echo "$1" | cut -d '.' -f 2-)
 	if [ -z $BPATH ]; then
-		ftpc "get $1"
+		ftpc "cd $foldername" "get $filename"
 	else
-		ftpc "cd $BPATH" "get $1"
+		ftpc "cd $BPATH/$foldername" "get $filename"
 	fi
 }
 
-#FTP Delete function
+# FTP Delete function
 ftp_delete() {
 	source_conf "$HESTIA/conf/ftp.backup.conf"
 	if [ -z "$PORT" ]; then
 		PORT='21'
 	fi
+	foldername=$(echo "$1" | cut -d '.' -f 1)
+	filename=$(echo "$1" | cut -d '.' -f 2-)
 	if [ -z $BPATH ]; then
-		ftpc "delete $1"
+		ftpc "cd $foldername" "delete $filename"
 	else
-		ftpc "cd $BPATH" "delete $1"
+		ftpc "cd $BPATH/$foldername" "delete $filename"
 	fi
 }
 
